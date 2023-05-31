@@ -46,5 +46,6 @@ jobs:
             git pull
             rm -rf node_modules
             pnpm i
+            pnpm run build
             pm2 restart 10
             nginx -s reload
