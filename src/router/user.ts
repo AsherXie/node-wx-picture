@@ -8,10 +8,9 @@ import mysql from '../mysql';
 
 import * as emailConfig from '../../email.config';
 
-console.log(emailConfig);
 const storage = multer.diskStorage({
   destination(req, file, cb) {
-    cb(null, path.resolve(__dirname, '../active-images'));
+    cb(null, '/active-images');
   },
 
   filename(req, file, cb) {
