@@ -102,41 +102,36 @@ class User {
 
   static sendEmailCode(req, res) {
     const { email } = req.body;
-    console.log(req.body);
     if (!email) {
       return res.status(400).send({
         err: 1,
         msg: '请输入邮箱！',
       });
     }
-    try {
-      const random = randomstring.generate(8);
-      // 绑定邮箱接口
-      const transporter = nodemailer.createTransport({
-        host: 'smtp.163.com',
-        port: 25,
-        secure: false,
-        auth: {
-          user: emailConfig.email_address,
-          pass: emailConfig.password,
-        },
-      });
-      const mailOptions = {
-        from: emailConfig.email_address,
-        to: email,
-        subject: '您好，欢迎您！',
-        text: `您的验证码是: ${random}`,
-      };
-      transporter.sendMail(mailOptions, (err) => {
-        console.log(err);
-        //   res.send({ a: '1' });
-        if (err) return res.status(400).send({ err: 1, msg: '发送失败！请重试！' });
-        codes[email] = random;
-        return res.send({ err: 0, msg: 'success!' });
-      });
-    } catch (ex) {
-      console.log(ex);
-    }
+    const random = randomstring.generate(8);
+    // 绑定邮箱接口
+    const transporter = nodemailer.createTransport({
+      host: 'smtp.163.com',
+      port: 25,
+      secure: false,
+      auth: {
+        user: emailConfig.email_address,
+        pass: emailConfig.password,
+      },
+    });
+    console.log(transporter);
+    const mailOptions = {
+      from: emailConfig.email_address,
+      to: email,
+      subject: '您好，欢迎您！',
+      text: `您的验证码是: ${random}`,
+    };
+    transporter.sendMail(mailOptions, (err) => {
+      if (err) return res.status(400).send({ err: 1, msg: '发送失败！请重试！' });
+      codes[email] = random;
+      return res.send({ err: 0, msg: 'success!' });
+    });
+
     return null;
   }
 
