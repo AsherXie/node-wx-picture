@@ -113,7 +113,7 @@ class User {
     const transporter = nodemailer.createTransport({
       host: 'smtp.163.com',
       port: 25,
-      secure: false,
+      secure: true,
       auth: {
         user: emailConfig.email_address,
         pass: emailConfig.password,
@@ -127,6 +127,7 @@ class User {
       text: `您的验证码是: ${random}`,
     };
     transporter.sendMail(mailOptions, (err) => {
+      transporter.close();
       if (err) return res.status(400).send({ err: 1, msg: '发送失败！请重试！' });
       codes[email] = random;
       return res.send({ err: 0, msg: 'success!' });
