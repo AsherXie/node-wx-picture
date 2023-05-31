@@ -1,2 +1,5 @@
 node_modules
 dist
+active-images
+email.config.ts
+mysql.config.ts
