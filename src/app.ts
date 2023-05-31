@@ -17,8 +17,8 @@ app.set('view engine', 'ejs');
 app.set('views', `${__dirname}/views`);
 app.use(express.json());
 
-app.use(adminUser);
-app.use(user);
+app.use('/api', adminUser);
+app.use('/api', user);
 
 app.listen(9988, () => {
   console.log('开始掠夺吧');
