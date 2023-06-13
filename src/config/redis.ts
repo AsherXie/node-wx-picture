@@ -1,10 +1,11 @@
 import Ioredis from 'ioredis';
-import mysqlConfig from '../../mysql.config';
+import dotenv from 'dotenv';
 
+dotenv.config();
 const redis = new Ioredis({
-  host: mysqlConfig.host,
+  host: process.env.HOST,
   port: 6379,
-  password: mysqlConfig.redispassword,
+  password: process.env.REDIS_PASSWORD,
   lazyConnect: true,
 });
 export default redis;

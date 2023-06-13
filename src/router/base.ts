@@ -1,7 +1,10 @@
 import express from 'express';
 import type { Redis } from 'ioredis';
-import redis from '../redis';
-import mysql from '../mysql';
+import dotenv from 'dotenv';
+import redis from '../config/redis';
+import mysql from '../config/mysql';
+
+dotenv.config();
 
 class BaseRouter {
   router = null;

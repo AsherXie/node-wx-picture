@@ -3,3 +3,4 @@ dist
 active-images
 mysql.config.ts
 email.config.ts
+.env
