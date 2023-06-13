@@ -11,6 +11,9 @@ app.use(
     secret: 'svg_check',
     resave: false,
     saveUninitialized: true,
+    cookie: {
+      maxAge: 30 * 60 * 1000, // 30 minutes
+    },
   }),
 );
 app.set('view engine', 'ejs');
@@ -20,6 +23,7 @@ app.use(express.json());
 app.use('/api', adminUser);
 app.use('/api', user);
 
+app.use((err) => {});
 app.listen(9988, () => {
   console.log('开始掠夺吧');
 });

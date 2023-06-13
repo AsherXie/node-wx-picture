@@ -4,9 +4,18 @@ import path from 'path';
 import nodemailer from 'nodemailer';
 import jwt from 'jsonwebtoken';
 import randomstring from 'randomstring';
+import Ioredis from 'ioredis';
 import mysql from '../mysql';
+import mysqkConfig from '../../mysql.config';
 
 import * as emailConfig from '../../email.config';
+
+const redis = new Ioredis({
+  host: mysqkConfig.host,
+  port: 6379,
+  password: '123321qw',
+  lazyConnect: true,
+});
 
 const storage = multer.diskStorage({
   destination(req, file, cb) {
@@ -63,41 +72,97 @@ class User {
   }
 
   registerTheRoute() {
+    this.router.get('/searchuser', User.searchUser);
+
     this.router.post('/upload', User.upload);
     this.router.post('/submit/:active', User.submitInfo);
     this.router.post('/sendcode', User.sendEmailCode);
+    this.router.post('/bind', User.bindEmail);
   }
 
   static async submitInfo(req, res) {
     // 上传所有信息接口
-    const { name, image_url: imageUrl, remark, listen, work_name: workName, email_captcha: emailCaptcha } = req.body;
-    if (!codes[listen] || codes[listen] !== emailCaptcha) {
-      return res.status(400).send({ err: 1, msg: '请输入正确的验证码！' });
-    }
-    delete codes[listen];
-    const sql = 'INSERT INTO wx_photo (name,work_name,image_url,remark,listen) values (?,?,?,?,?)';
-    mysql.getConnection((error, connection) => {
-      connection.query(sql, [name, workName, imageUrl, remark, listen], (err) => {
-        if (err) {
-          res.status(400).send({
-            err: 1,
-            msg: err.message,
-          });
-        } else {
-          res.status(200).send({
-            err: 0,
-            msg: 'success',
-          });
-        }
-        connection.release();
+    try {
+      const { name, image_url: imageUrl, remark, listen, work_name: workName, email_captcha: emailCaptcha } = req.body;
+      const captcode = await redis.get(req.body.email);
+      // redis.get(email,(error,result)=>{})
+      if (!codes[listen] || captcode !== emailCaptcha) {
+        return res.status(400).send({ err: 1, msg: '请输入正确的验证码！' });
+      }
+      redis.del(listen);
+      const sql = 'INSERT INTO wx_photo (name,work_name,image_url,remark,listen) values (?,?,?,?,?)';
+      mysql.getConnection((error, connection) => {
+        connection.query(sql, [name, workName, imageUrl, remark, listen], (err) => {
+          if (err) {
+            res.status(400).send({
+              err: 1,
+              msg: err.message,
+            });
+          } else {
+            res.status(200).send({
+              err: 0,
+              msg: 'success',
+            });
+          }
+          connection.release();
+        });
       });
-    });
+    } catch (ex) {
+      console.log(ex);
+    }
 
     return null;
   }
 
-  static bindEmail() {
+  static searchUser(request, response) {
+    mysql.getConnection(async (err, connect) => {
+      if (err) return response.status(500).send({ msg: '系统错误！' });
+      const { email } = request.query;
+      const sql = 'SELECT * FROM user WHERE email = ?';
+      connect.query(sql, [email], (error, result) => {
+        if (err) return response.send({ err: 1, msg: error.message });
+        return Array.isArray(result)
+          ? response.send({
+              err: 0,
+              status: result.length === 1 ? 1 : 0,
+            })
+          : null;
+      });
+      return null;
+    });
+  }
+
+  static async bindEmail(req, res) {
     // 绑定邮箱接口
+    const { email, captcode } = req.body;
+    if (!email || !captcode) {
+      return res.status(400).send({ err: 1, msg: '缺少必填参数！' });
+    }
+
+    const redisCode = await redis.get(email);
+
+    if (redisCode !== captcode) {
+      return res.status(400).send({ err: 1, msg: '验证码错误！' });
+    }
+
+    const str = randomstring.generate({
+      length: 8,
+      charset: 'ABCDEFGHIJKLMNOPQRSTUVWXYZ',
+    });
+    const userName = `USER_${str}`;
+
+    const sql = 'INSERT INTO user (username,email) values (?, ?)';
+    mysql.getConnection((err, connection) => {
+      if (err) return res.status(400).send({ err: 1, msg: err.message });
+
+      connection.query(sql, [userName, email], (error) => {
+        if (error) return res.status(400).send({ err: 1, msg: error.message });
+        return res.send({ err: 0, msg: 'success!' });
+      });
+      return null;
+    });
+
+    return null;
   }
 
   static sendEmailCode(req, res) {
@@ -127,10 +192,9 @@ class User {
       text: `您的验证码是: ${random}`,
     };
     transporter.sendMail(mailOptions, (err) => {
-      // transporter.close();
-      console.log(err);
       if (err) return res.status(400).send({ err: 1, msg: '发送失败！请重试！' });
-      codes[email] = random;
+      redis.set(email, random);
+      redis.expire(email, 60 * 60 * 12);
       return res.send({ err: 0, msg: 'success!' });
     });
 

@@ -1,26 +1,25 @@
-import express, { Request, Response } from 'express';
+import { Request, Response } from 'express';
 import bcrypt from 'bcrypt';
 import svgObject from 'svg-captcha';
-import mysql from '../mysql/index';
+import BaseRouter from './base';
 
-class Router {
-  private router = express.Router();
-
+class Router extends BaseRouter {
   // static salt = '10';
   // static salt = await bcrypt.genSalt(10);
 
   constructor() {
+    super();
     this.registerTheRoute();
   }
 
   registerTheRoute() {
-    this.router.post('/register', Router.register);
-    this.router.post('/login', Router.login);
-    this.router.get('/captcha', Router.captcha);
+    this.post('/register', this.register);
+    this.post('/login', this.login);
+    this.get('/captcha', Router.captcha);
   }
 
   // 注册用户
-  static async register(request: Request, response: Response) {
+  async register(request: Request, response: Response) {
     const { username, password } = request.body;
     // 校验密码
     if (!password || !/(?=.*\d)(?=.*[a-z])(?=.*[A-Z]).{8,}/.test(password)) {
@@ -35,7 +34,7 @@ class Router {
 
       const sql = 'INSERT INTO user_admin (username, password) VALUES (?, ?)';
 
-      mysql.getConnection((error, connection) => {
+      this.mysql.getConnection((error, connection) => {
         if (error) return response.status(500).json({ msg: 'Server is error' });
         connection.query(sql, [username, hash], (sqlError) => {
           if (sqlError && sqlError.code === 'ER_DUP_ENTRY') {
@@ -51,13 +50,13 @@ class Router {
   }
 
   // 登录接口
-  static login(request: Request, response: Response) {
+  login(request: Request, response: Response) {
     const { username, password, captcha } = request.body;
     if (!captcha || String(captcha) !== request.session.captcha) {
       return response.status(400).send({ err: 1, message: '验证码错误' });
     }
     const sql = 'SELECT * FROM user_admin WHERE username = ?';
-    mysql.getConnection((_, connection) => {
+    this.mysql.getConnection((_, connection) => {
       connection.query(sql, [username], async (error, data) => {
         if (error) return response.send({ err: 1, message: '用户名或密码错误' });
         // 验证密码
@@ -88,10 +87,6 @@ class Router {
     });
     request.session.captcha = captcha.text;
     response.type('svg').send(captcha.data);
-  }
-
-  getRouter() {
-    return this.router;
   }
 }
 
