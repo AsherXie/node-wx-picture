@@ -3,6 +3,10 @@ import path from 'path';
 import nodemailer from 'nodemailer';
 import jwt from 'jsonwebtoken';
 import randomstring from 'randomstring';
+import verifyParameters, { ParamsVerifyArray } from '@/utils/verify';
+import { emailRagExp } from '@/utils/regrex';
+import databaseOperations from '@/utils/databaseOperations';
+import getTime from '@/utils';
 import BaseRouter from './base';
 
 const storage = multer.diskStorage({
@@ -41,9 +45,6 @@ class User extends BaseRouter {
   constructor() {
     super();
     this.registerTheRoute();
-    this.mysql.getConnection((err) => {
-      console.log(err, 12323);
-    });
   }
 
   static upload(req, res) {
@@ -60,42 +61,69 @@ class User extends BaseRouter {
   }
 
   registerTheRoute() {
-    this.router.get('/searchuser', this.searchUser);
-    this.router.post('/upload', User.upload);
-    this.router.post('/submit/:active', this.submitInfo);
-    this.router.post('/sendcode', this.sendEmailCode);
-    this.router.post('/bind', this.bindEmail);
+    this.get('/searchuser', this.searchUser);
+    this.post('/upload', User.upload);
+    this.post('/submit/:active', this.submitInfo);
+    this.post('/sendcode', this.sendEmailCode);
+    this.post('/bind', this.bindEmail);
+    this.post('/user/login', this.login);
   }
 
+  // 提交活动信息
   async submitInfo(req, res) {
     // 上传所有信息接口
+    const captcode = await this.redis.get(req.body.email);
+
     try {
       const { name, image_url: imageUrl, remark, listen, work_name: workName, email_captcha: emailCaptcha } = req.body;
-      const captcode = await this.redis.get(req.body.email);
-      // this.redis.get(email,(error,result)=>{})
-      if (captcode !== emailCaptcha) {
-        return res.status(400).send({ err: 1, msg: '请输入正确的验证码！' });
-      }
+
+      // 参数都是必填参数
+      const params: ParamsVerifyArray = [
+        {
+          key: 'name',
+          require: true,
+        },
+        {
+          key: 'image_url',
+          require: true,
+        },
+        {
+          key: 'remark',
+          require: true,
+        },
+        {
+          key: 'listen',
+          rules: emailRagExp,
+          text: '请输入正确的验证码！',
+        },
+        {
+          key: 'work_name',
+          require: true,
+        },
+        {
+          key: 'email_captcha',
+          rules: () => emailCaptcha === captcode,
+          require: true,
+        },
+      ];
+
+      const error = verifyParameters(params, req.body);
+
+      if (error) return res.status(400).send({ error: 1, msg: error.text });
+
       this.redis.del(listen);
       const sql = 'INSERT INTO wx_photo (name,work_name,image_url,remark,listen) values (?,?,?,?,?)';
-      this.mysql.getConnection((error, connection) => {
-        connection.query(sql, [name, workName, imageUrl, remark, listen], (err) => {
-          if (err) {
-            res.status(400).send({
-              err: 1,
-              msg: err.message,
-            });
-          } else {
-            res.status(200).send({
-              err: 0,
-              msg: 'success',
-            });
-          }
-          connection.release();
-        });
+
+      await databaseOperations(sql, [name, workName, imageUrl, remark, listen]);
+      res.status(200).send({
+        err: 0,
+        msg: 'success',
       });
     } catch (ex) {
-      console.log(ex);
+      res.status(200).send({
+        err: 0,
+        msg: ex.message,
+      });
     }
 
     return null;
@@ -134,7 +162,7 @@ class User extends BaseRouter {
 
     const str = randomstring.generate({
       length: 8,
-      charset: 'ABCDEFGHIJKLMNOPQRSTUVWXYZ',
+      charset: 'ABCDEFGHIJKLMNPQRSTUVWXYZ123456789',
     });
     const userName = `USER_${str}`;
 
@@ -152,7 +180,7 @@ class User extends BaseRouter {
     return null;
   }
 
-  sendEmailCode(req, res) {
+  async sendEmailCode(req, res) {
     const { email } = req.body;
     if (!email) {
       return res.status(400).send({
@@ -160,7 +188,24 @@ class User extends BaseRouter {
         msg: '请输入邮箱！',
       });
     }
-    const random = randomstring.generate(8);
+    const key = `code_limt:${email}`;
+
+    const count = await this.redis.get(key);
+
+    // console.log(count);
+    if (!count) this.redis.expire(key, getTime());
+    if (count && Number(count) >= 3) {
+      return res.status(429).send({
+        error: 1,
+        msg: '验证码已经超出上限！',
+      });
+    }
+    this.redis.incr(key);
+
+    const random = randomstring.generate({
+      charset: 'numeric',
+      length: 4,
+    });
 
     // 绑定邮箱接口
     const transporter = nodemailer.createTransport({
@@ -172,7 +217,7 @@ class User extends BaseRouter {
         pass: process.env.EMAIL_PASSWORD,
       },
     });
-    // console.log(transporter);
+
     const mailOptions = {
       from: process.env.EMAIL_ADDRESS,
       to: email,
@@ -189,8 +234,63 @@ class User extends BaseRouter {
     return null;
   }
 
-  getRouter() {
-    return this.router;
+  async login(req, res) {
+    const verifyData: ParamsVerifyArray = [
+      {
+        key: 'email',
+        rules: emailRagExp,
+        text: '请填写正确的邮箱',
+      },
+    ];
+
+    const result = verifyParameters(verifyData, req.body);
+
+    if (result) {
+      return res.status(400).send({
+        err: 1,
+        msg: result.text,
+      });
+    }
+    const code = (await this.redis.get(req.body.email)) || '111111';
+
+    if (code !== req.body.code) {
+      return res.status(400).send({
+        error: 1,
+        msg: '验证码出错！',
+      });
+    }
+
+    const sql = 'SELECT * FROM user WHERE email=?';
+    const mysqlResult = await databaseOperations(sql, [req.body.email]);
+
+    // token有两个状态一个是可用一个已经退出登录或者重新登陆
+
+    if (mysqlResult && mysqlResult[0]) {
+      const token = jwt.sign(
+        {
+          username: mysqlResult[0].user_name,
+          email: mysqlResult[0].email,
+        },
+        'userinfo',
+        {
+          expiresIn: `${24 * 5}h`,
+        },
+      );
+      this.redis.del(req.body.email);
+      const tokenRedis = await this.redis.get(`token:${req.body.eamil}`);
+      if (tokenRedis) {
+        console.log('重新登陆');
+        this.redis.set(`token:${req.body.eamil}`, 0);
+      } else {
+        console.log('首次登陆');
+        this.redis.set(`token:${req.body.eamil}`, 1);
+        this.redis.expire(`token:${req.body.eamil}`, 60 * 60 * 24 * 5);
+      }
+      return res.send({
+        token,
+      });
+    }
+    return res.status(500).end('error');
   }
 }
 

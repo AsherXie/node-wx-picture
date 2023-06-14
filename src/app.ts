@@ -26,5 +26,5 @@ app.use('/api', adminUser);
 app.use('/api', user);
 
 app.listen(9988, () => {
-  console.log('开始掠夺吧');
+  console.log('让我们来猎杀那些陷入黑暗中的人吧！');
 });

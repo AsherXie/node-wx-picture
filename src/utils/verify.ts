@@ -1,19 +1,19 @@
 type Rules = RegExp | (() => boolean);
 
 export interface ParamsVerify {
-  data: string | number;
+  key: string;
   rules?: Rules;
   require?: boolean;
-  text: string;
+  text?: string;
 }
 
-const verifyParameters = (params: Array<ParamsVerify>) =>
-  params.find((validator) => {
-    const { rules, data, require } = validator;
+export type ParamsVerifyArray = Array<ParamsVerify>;
 
-    if (require) {
-      return !data;
-    }
+const verifyParameters = (paramsRules: ParamsVerifyArray, params: object) => {
+  const error = paramsRules.find((validator) => {
+    const { rules, key, require } = validator;
+    const data = params[key];
+    if (require) return data === null || data === undefined;
 
     if (rules instanceof RegExp) {
       return !rules.test(String(data));
@@ -25,5 +25,10 @@ const verifyParameters = (params: Array<ParamsVerify>) =>
 
     return true;
   });
+  if (error && error.require) {
+    error.text = `${error.key} is required`;
+  }
+  return error;
+};
 
 export default verifyParameters;

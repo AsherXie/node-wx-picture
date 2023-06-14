@@ -11,6 +11,7 @@ export default (queryStatements: string, params: Array<number | string>) =>
           reject(queryError);
         }
         resolve(data);
+        connection.release();
       });
     });
   });
