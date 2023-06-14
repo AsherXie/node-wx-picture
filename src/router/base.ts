@@ -22,7 +22,7 @@ class BaseRouter {
   }
 
   post(path, handler) {
-    this.router.post(path, handler);
+    this.router.post(path, handler.bind(this));
   }
 
   put(path, handler) {
